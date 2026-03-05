@@ -112,15 +112,6 @@ The database schema is auto-imported from `database/migrations/database.sql` on 
 
 ---
 
-## 🧪 Test Accounts *(after first boot)*
-
-| Role | Username | Password |
-|------|----------|----------|
-| Admin | `admin` | set during migration |
-| User | register via `/register.php` | — |
-
----
-
 ## 📖 Tech Stack
 
 - **Backend** — PHP 8.2, PDO/MySQL
@@ -129,13 +120,6 @@ The database schema is auto-imported from `database/migrations/database.sql` on 
 - **Mail** — PHPMailer 7 + MailHog (dev)
 - **Server** — Apache 2.4 (mod_rewrite + mod_headers)
 - **Container** — Docker + Docker Compose
-
----
-
-## 🤝 Contributing
-
-Pull requests are welcome. For major changes, open an issue first.  
-Please read [`SECURITY.md`](SECURITY.md) before contributing to security-sensitive areas.
 
 ---
 

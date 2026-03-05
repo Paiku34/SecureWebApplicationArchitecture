@@ -1,6 +1,19 @@
-# Documentazione Sicurezza — MusicProject
+<div align="center">
 
-> Versione: 1.0 | PHP 8.x | MariaDB | Docker
+# 🔒 Security Documentation — MusicProject
+
+[![PHP](https://img.shields.io/badge/PHP-8.2-777BB4?logo=php&logoColor=white)](https://www.php.net/)
+[![MySQL](https://img.shields.io/badge/MySQL-8.0-4479A1?logo=mysql&logoColor=white)](https://www.mysql.com/)
+[![OWASP](https://img.shields.io/badge/OWASP-Top10%20Covered-red)](https://owasp.org/www-project-top-ten/)
+[![Argon2ID](https://img.shields.io/badge/Hashing-Argon2ID-blueviolet)](https://www.rfc-editor.org/rfc/rfc9106)
+
+**Version 1.0 · PHP 8.2 · MySQL 8.0 · Docker**
+
+> Full PDF version available in [`docs/SECURITY.pdf`](docs/SECURITY.pdf)
+
+</div>
+
+← Back to [README](README.md)
 
 ---
 
@@ -218,7 +231,7 @@ Il progetto usa **whitelist** (elenco di caratteri/formati **ammessi**) invece d
 - Path file: solo `[a-zA-Z0-9\/_.-]`
 - Extra input (titoli): `[\p{L}\p{N}\s\-_.`,!?()'"]` — lettere Unicode, numeri, punteggiatura base
 
-### Prevensione XSS Output
+### Prevenzione XSS Output
 
 Ogni variabile dinamica inserita nell'HTML usa:
 ```php
@@ -567,7 +580,7 @@ Ogni form admin include un token `admin_csrf_token` generato separatamente. Non 
 ### File: `Dockerfile`, `docker-compose.yml`
 
 - **Credenziali DB:** Solo via variabili d'ambiente Docker (`MYSQL_*`)
-- **Nessuna credenziale in VCS:** `.env` non committato; credenziali solo in `docker-compose.yml` (da aggiungere a `.gitignore` in produzione)
+- **Nessuna credenziale in VCS:** `.env` non committato; `.gitignore` esclude `.env`, `vendor/` e tutti i file di upload e log
 - **MailHog:** Mail server locale per lo sviluppo; in produzione sostituire con SMTP reale via env vars `MAIL_HOST`, `MAIL_PORT`, `MAIL_USER`, `MAIL_PASS`
 - **`APP_ENV`:** `development` abilita log di debug aggiuntivi; in produzione impostare a `production`
 
