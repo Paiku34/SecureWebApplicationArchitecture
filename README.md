@@ -123,6 +123,4 @@ The database schema is auto-imported from `database/migrations/database.sql` on 
 
 ---
 
-<div align="center">
-Made with ♥ and a lot of <code>declare(strict_types=1)</code>
-</div>
+
