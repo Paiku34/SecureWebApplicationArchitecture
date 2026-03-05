@@ -1,0 +1,46 @@
+/* Stili comuni per tutte le pagine */
+
+body { 
+    font-family: "Spline Sans", sans-serif; 
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar { 
+    width: 8px; 
+}
+
+::-webkit-scrollbar-track { 
+    background: #161022; 
+}
+
+::-webkit-scrollbar-thumb { 
+    background: #2f2348; 
+    border-radius: 4px; 
+}
+
+::-webkit-scrollbar-thumb:hover { 
+    background: #5b13ec; 
+}
+
+/* Print security */
+@media print { 
+    body { 
+        display: none; 
+    } 
+}
+
+/* Material Icons */
+.material-symbols-outlined { 
+    font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24; 
+}
+
+.material-symbols-outlined.fill-1 { 
+    font-variation-settings: 'FILL' 1, 'wght' 400, 'GRAD' 0, 'opsz' 24; 
+}
+
+/* Glass panel effect */
+.glass-panel {
+    background: rgba(29, 22, 43, 0.6);
+    backdrop-filter: blur(12px);
+    border: 1px solid rgba(91, 19, 236, 0.15);
+}

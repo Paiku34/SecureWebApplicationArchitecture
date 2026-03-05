@@ -1,0 +1,35 @@
+# ============================================
+# PROTEZIONE CARTELLA DATABASE
+# ============================================
+# Contiene: /migrations/ con file .sql
+#
+# ACCESSO: COMPLETAMENTE BLOCCATO
+# I file SQL contengono lo schema del database
+# e NON devono MAI essere accessibili via HTTP
+# ============================================
+
+# 1. BLOCCO TOTALE
+<IfModule mod_authz_core.c>
+    Require all denied
+</IfModule>
+<IfModule !mod_authz_core.c>
+    Order deny,allow
+    Deny from all
+</IfModule>
+
+# 2. NO LISTING
+Options -Indexes
+
+# 3. BLOCCA SPECIFICAMENTE FILE SQL
+<FilesMatch "\.(sql|sqlite|db|mdb)$">
+    <IfModule mod_authz_core.c>
+        Require all denied
+    </IfModule>
+</FilesMatch>
+
+# 4. BLOCCA FILE NASCOSTI
+<FilesMatch "^\.">
+    <IfModule mod_authz_core.c>
+        Require all denied
+    </IfModule>
+</FilesMatch>

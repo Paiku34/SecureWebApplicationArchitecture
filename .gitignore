@@ -1,0 +1,37 @@
+# Composer dependencies
+/vendor/
+
+# Environment files (CRITICO!)
+.env
+.env.local
+.env.production
+
+# Storage uploads (Non committare file utente)
+storage/uploads/audio/*.mp3
+storage/uploads/lyrics/*.txt
+
+# Mantieni solo la struttura cartelle
+!storage/uploads/audio/.gitkeep
+!storage/uploads/lyrics/.gitkeep
+
+# Log files
+storage/logs/*.log
+
+# Docker volumes
+db_data/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Node modules (se userai frontend tools)
+node_modules/
+
+# Backup files
+*.bak
+*.swp
+*~

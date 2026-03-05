@@ -1,0 +1,45 @@
+# ============================================
+# PROTEZIONE CARTELLA UPLOADS
+# ============================================
+# Sottocartelle: /audio/, /lyrics/
+# Contiene file caricati dagli utenti
+#
+# ACCESSO DIRETTO: BLOCCATO
+# ACCESSO AUTORIZZATO: Solo via download.php e view_lyrics.php
+# ============================================
+
+# 1. BLOCCO TOTALE ACCESSO HTTP
+<IfModule mod_authz_core.c>
+    Require all denied
+</IfModule>
+<IfModule !mod_authz_core.c>
+    Order deny,allow
+    Deny from all
+</IfModule>
+
+# 2. NO DIRECTORY LISTING
+Options -Indexes
+
+# 3. DISABILITA PHP (protezione Web Shell)
+<IfModule mod_php.c>
+    php_flag engine off
+</IfModule>
+<IfModule mod_php7.c>
+    php_flag engine off
+</IfModule>
+<IfModule mod_php8.c>
+    php_flag engine off
+</IfModule>
+
+# 4. BLOCCA ESECUZIONE SCRIPT
+<FilesMatch "\.(php|phtml|php3|php4|php5|php7|php8|phar|inc|pl|py|cgi|sh|bash)$">
+    <IfModule mod_authz_core.c>
+        Require all denied
+    </IfModule>
+</FilesMatch>
+
+# 5. HEADERS SICUREZZA
+<IfModule mod_headers.c>
+    Header set X-Content-Type-Options nosniff
+    Header set Content-Disposition attachment
+</IfModule>

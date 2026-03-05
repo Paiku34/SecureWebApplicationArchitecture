@@ -1,0 +1,44 @@
+# ============================================
+# PROTEZIONE CARTELLA LOGS
+# ============================================
+# Contiene: security.log (eventi di sicurezza)
+#
+# ACCESSO: COMPLETAMENTE BLOCCATO
+# Nessun file in questa cartella deve essere accessibile via HTTP
+# ============================================
+
+# 1. BLOCCO ASSOLUTO (Apache 2.4+)
+<IfModule mod_authz_core.c>
+    Require all denied
+</IfModule>
+
+# 1b. Fallback Apache 2.2
+<IfModule !mod_authz_core.c>
+    Order deny,allow
+    Deny from all
+</IfModule>
+
+# 2. NO LISTING
+Options -Indexes
+
+# 3. BLOCCA TUTTI I TIPI DI FILE
+<FilesMatch ".*">
+    <IfModule mod_authz_core.c>
+        Require all denied
+    </IfModule>
+    <IfModule !mod_authz_core.c>
+        Order deny,allow
+        Deny from all
+    </IfModule>
+</FilesMatch>
+
+# 4. DISABILITA PHP (paranoia mode)
+<IfModule mod_php.c>
+    php_flag engine off
+</IfModule>
+<IfModule mod_php7.c>
+    php_flag engine off
+</IfModule>
+<IfModule mod_php8.c>
+    php_flag engine off
+</IfModule>
