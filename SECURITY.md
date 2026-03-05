@@ -17,84 +17,83 @@
 
 ---
 
-## Indice
+## Table of Contents
 
-1. [Architettura Generale](#1-architettura-generale)
-2. [Autenticazione e Gestione Sessioni](#2-autenticazione-e-gestione-sessioni)
-3. [Protezione CSRF](#3-protezione-csrf)
+1. [General Architecture](#1-general-architecture)
+2. [Authentication & Session Management](#2-authentication--session-management)
+3. [CSRF Protection](#3-csrf-protection)
 4. [Rate Limiting](#4-rate-limiting)
-5. [Validazione e Sanitizzazione Input](#5-validazione-e-sanitizzazione-input)
-6. [Sicurezza Password](#6-sicurezza-password)
-7. [Upload Sicuro dei File](#7-upload-sicuro-dei-file)
-8. [Download Sicuro e Integrity Check](#8-download-sicuro-e-integrity-check)
-9. [Protezione Path Traversal](#9-protezione-path-traversal)
+5. [Input Validation & Sanitization](#5-input-validation--sanitization)
+6. [Password Security](#6-password-security)
+7. [Secure File Upload](#7-secure-file-upload)
+8. [Secure Download & Integrity Check](#8-secure-download--integrity-check)
+9. [Path Traversal Protection](#9-path-traversal-protection)
 10. [HTTP Security Headers](#10-http-security-headers)
-11. [Sicurezza Database](#11-sicurezza-database)
-12. [Logging e Audit Trail](#12-logging-e-audit-trail)
-13. [Recovery Password](#13-recovery-password)
-14. [Pannello Admin](#14-pannello-admin)
-15. [Manutenzione e Cleanup Automatico](#15-manutenzione-e-cleanup-automatico)
-16. [Configurazione Ambiente (Docker)](#16-configurazione-ambiente-docker)
-17. [Matrice delle Vulnerabilità Coperte](#17-matrice-delle-vulnerabilit%C3%A0-coperte)
+11. [Database Security](#11-database-security)
+12. [Logging & Audit Trail](#12-logging--audit-trail)
+13. [Password Recovery](#13-password-recovery)
+14. [Admin Panel](#14-admin-panel)
+15. [Maintenance & Automatic Cleanup](#15-maintenance--automatic-cleanup)
+16. [Environment Configuration (Docker)](#16-environment-configuration-docker)
+17. [Vulnerability Coverage Matrix](#17-vulnerability-coverage-matrix)
 
 ---
 
-## 1. Architettura Generale
+## 1. General Architecture
 
 ```
-public/          ← Entry point HTTP (accesso diretto del browser)
-includes/        ← Logica condivisa (autenticazione, DB, logger, rate limiter)
+public/          ← HTTP entry points (direct browser access)
+includes/        ← Shared logic (auth, DB, logger, rate limiter)
 storage/
   uploads/
-    audio/       ← File MP3 caricati (fuori dalla document root non è necessario, chmod 0644)
-    lyrics/      ← File TXT caricati
-  logs/          ← Log sicurezza su file
+    audio/       ← Uploaded MP3 files (chmod 0644)
+    lyrics/      ← Uploaded TXT files
+  logs/          ← Security log files
 ```
 
-**Principi fondamentali applicati:**
+**Core security principles applied:**
 
-| Principio | Applicazione |
+| Principle | Application |
 |-----------|-------------|
-| Defense in Depth | Ogni operazione ha ≥2 controlli indipendenti |
-| Fail Secure | In caso di errore, accesso negato (non permesso) |
-| Least Privilege | Il DB non ha UPDATE/DELETE su tabelle non necessarie per ogni query |
-| Separation of Concerns | Form (upload.php) separato dal controller (upload_control.php) |
-| Security by Default | `declare(strict_types=1)` in tutti i file PHP |
+| Defense in Depth | Every operation has ≥2 independent controls |
+| Fail Secure | On error, access is denied (never granted) |
+| Least Privilege | DB user has only the minimum permissions needed |
+| Separation of Concerns | Upload form (upload.php) separate from controller (upload_control.php) |
+| Security by Default | `declare(strict_types=1)` in every PHP file |
 
 ---
 
-## 2. Autenticazione e Gestione Sessioni
+## 2. Authentication & Session Management
 
-### File: `includes/authentication.php`, `public/login.php`
+### Files: `includes/authentication.php`, `public/login.php`
 
-### 2.1 Configurazione Sessione Sicura
+### 2.1 Secure Session Configuration
 
-Configurata prima di `session_start()` tramite `ini_set()`:
+Configured before `session_start()` via `ini_set()`:
 
-| Parametro | Valore | Motivo |
-|-----------|--------|--------|
-| `use_strict_mode` | `1` | Rifiuta session ID non inizializzati dal server |
-| `cookie_httponly` | `1` | Cookie non accessibile via JavaScript (mitigazione XSS) |
-| `cookie_samesite` | `Lax` | Blocca invio cookie su richieste cross-site (mitigazione CSRF) |
-| `cookie_secure` | `1` (prod) | Cookie trasmesso solo su HTTPS |
-| `cookie_lifetime` | `0` | Cookie di sessione (eliminato alla chiusura del browser) |
-| `use_only_cookies` | `1` | Session ID solo via cookie (non via URL) |
-| `gc_maxlifetime` | `1800` | Garbage collection dopo 30 minuti di inattività |
+| Parameter | Value | Reason |
+|-----------|-------|--------|
+| `use_strict_mode` | `1` | Rejects session IDs not initialized by the server |
+| `cookie_httponly` | `1` | Cookie inaccessible via JavaScript (XSS mitigation) |
+| `cookie_samesite` | `Lax` | Blocks cookie on cross-site requests (CSRF mitigation) |
+| `cookie_secure` | `1` (prod) | Cookie transmitted only over HTTPS |
+| `cookie_lifetime` | `0` | Session cookie (deleted on browser close) |
+| `use_only_cookies` | `1` | Session ID via cookie only (not via URL) |
+| `gc_maxlifetime` | `1800` | Garbage collection after 30 minutes of inactivity |
 
-### 2.2 Validazione Sessione (`validate_session()`)
+### 2.2 Session Validation (`validate_session()`)
 
-Tre controlli sequenziali ad ogni richiesta autenticata:
+Three sequential checks on every authenticated request:
 
-1. **Presenza `user_id` in `$_SESSION`** — se assente, redirect a login
-2. **Timeout inattività (30 minuti)** — `$_SESSION['last_activity']` aggiornato ad ogni richiesta
-3. **Ban check real-time** — query `SELECT is_banned FROM users WHERE id = ?` ad ogni richiesta;
-   un utente bannato viene espulso alla richiesta successiva anche se ha una sessione valida
+1. **`user_id` present in `$_SESSION`** — if absent, redirect to login
+2. **Inactivity timeout (30 minutes)** — `$_SESSION['last_activity']` updated on each request
+3. **Real-time ban check** — `SELECT is_banned FROM users WHERE id = ?` on every request; a banned user is evicted on next request even with a valid session
 
 ### 2.3 IP Binding (Anti Session Hijacking)
 
-All'accesso: `$_SESSION['ip_address'] = $_SERVER['REMOTE_ADDR']`
+On login: `$_SESSION['ip_address'] = $_SERVER['REMOTE_ADDR']`
 
-Ad ogni richiesta protetta:
+On every protected request:
 ```php
 if ($_SESSION['ip_address'] !== $_SERVER['REMOTE_ADDR']) {
     session_destroy();
@@ -105,39 +104,39 @@ if ($_SESSION['ip_address'] !== $_SERVER['REMOTE_ADDR']) {
 
 ### 2.4 Session Fixation Prevention
 
-Al momento del login, dopo aver verificato le credenziali:
+At login, after credentials are verified:
 ```php
-session_regenerate_id(true);  // genera nuovo ID, elimina il vecchio
+session_regenerate_id(true);  // generates new ID, deletes the old one
 ```
 
-Il parametro `true` elimina il vecchio file di sessione dal server.
+The `true` parameter deletes the old session file from the server.
 
-### 2.5 Timing Attack Prevention (Anti User Enumeration via Timing)
+### 2.5 Timing Attack Prevention (Anti Username Enumeration)
 
-Se l'username non esiste nel DB, viene eseguito comunque un `password_verify()` su un hash dummy con gli stessi parametri Argon2ID (memory=64MB, time=4). Questo garantisce che il tempo di risposta sia identico per "username non esiste" e "password sbagliata", impedendo l'enumerazione degli username via timing.
+If the username does not exist in the DB, a `password_verify()` is still executed against a dummy hash with the same Argon2ID parameters (memory=64MB, time=4). This ensures the response time is identical for "username not found" and "wrong password", preventing username enumeration via timing.
 
 ---
 
-## 3. Protezione CSRF
+## 3. CSRF Protection
 
 ### File: `includes/authentication.php`
 
-### Generazione Token
+### Token Generation
 
 ```php
 function generate_csrf_token(): string {
     if (empty($_SESSION['csrf_token'])) {
-        $_SESSION['csrf_token'] = bin2hex(random_bytes(32)); // 256 bit di entropia
+        $_SESSION['csrf_token'] = bin2hex(random_bytes(32)); // 256 bits of entropy
     }
     return $_SESSION['csrf_token'];
 }
 ```
 
-- **Entropia:** 256 bit (32 byte casuali da CSPRNG)
-- **Storage:** In sessione lato server (non nel cookie)
-- **Transmission:** Hidden input nel form HTML
+- **Entropy:** 256 bits (32 bytes from CSPRNG)
+- **Storage:** Server-side in session (not in cookie)
+- **Transmission:** Hidden input in the HTML form
 
-### Verifica Token
+### Token Verification
 
 ```php
 function verify_csrf_token(?string $token): bool {
@@ -148,11 +147,11 @@ function verify_csrf_token(?string $token): bool {
 }
 ```
 
-`hash_equals()` è **timing-safe**: il confronto impiega sempre lo stesso tempo indipendentemente da quanti caratteri corrispondono, prevenendo timing-oracle attack sul token CSRF.
+`hash_equals()` is **timing-safe**: the comparison always takes the same time regardless of how many characters match, preventing timing-oracle attacks on the CSRF token.
 
-### Token Separati per Area Admin
+### Separate Token for Admin Area
 
-Il pannello admin usa un token CSRF separato (`admin_csrf_token`) dal token utente standard, implementando la separazione dei privilegi anche a livello CSRF.
+The admin panel uses a separate CSRF token (`admin_csrf_token`), implementing privilege separation at the CSRF level as well.
 
 ---
 
@@ -160,11 +159,11 @@ Il pannello admin usa un token CSRF separato (`admin_csrf_token`) dal token uten
 
 ### File: `includes/RateLimiter.php`
 
-### Architettura
+### Architecture
 
-Il rate limiter è basato su database (tabella `rate_limits`) con finestra temporale scorrevole. Non richiede Redis o Memcached.
+The rate limiter is database-backed (table `rate_limits`) with a sliding time window. No Redis or Memcached required.
 
-**Schema tabella:**
+**Table schema:**
 ```sql
 CREATE TABLE rate_limits (
     identifier  VARCHAR(255) PRIMARY KEY,
@@ -175,26 +174,26 @@ CREATE TABLE rate_limits (
 );
 ```
 
-### Configurazione Limiti per Azione
+### Limits per Action
 
-| Azione | Max Tentativi | Finestra | Scope |
-|--------|--------------|---------|-------|
-| `login` | 5 | 15 minuti | Per username + per IP separati |
-| `register` | 5 | 60 minuti | Per IP |
-| `upload` | 10 | 60 minuti | Per user_id |
-| `download` | 10 | 60 minuti | Per user_id |
-| `view_lyrics` | 1000 | 60 minuti | Per user_id (anti-scraping) |
-| `password_reset` | 3 | 24 ore | Per IP |
-| `change_password` | 3 | 24 ore | Per user_id |
+| Action | Max Attempts | Window | Scope |
+|--------|-------------|--------|-------|
+| `login` | 5 | 15 minutes | Per username + per IP (independent) |
+| `register` | 5 | 60 minutes | Per IP |
+| `upload` | 10 | 60 minutes | Per user_id |
+| `download` | 10 | 60 minutes | Per user_id |
+| `view_lyrics` | 1000 | 60 minutes | Per user_id (anti-scraping) |
+| `password_reset` | 3 | 24 hours | Per IP |
+| `change_password` | 3 | 24 hours | Per user_id |
 
-### Doppio Layer Login
+### Dual-Layer Login Protection
 
-Il login applica rate limiting su **due identificatori indipendenti**:
+Login rate limiting uses **two independent identifiers**:
 
-- `login_ip_{IP}` — blocca brute force da uno stesso IP (anche con username diversi)
-- `{username}` — blocca targeted brute force su uno specifico account (anche da IP diversi)
+- `login_ip_{IP}` — blocks brute force from a single IP (even with different usernames)
+- `{username}` — blocks targeted brute force on a specific account (even from different IPs)
 
-### Atomicità Anti-Race Condition
+### Atomic Anti-Race Condition
 
 ```sql
 INSERT INTO rate_limits (identifier, action_type, attempts, window_start, last_attempt)
@@ -205,134 +204,134 @@ ON DUPLICATE KEY UPDATE
     last_attempt = NOW()
 ```
 
-Questa query atomica previene race condition in cui due richieste simultanee incrementino da 0 a 1 separatamente invece di 0→1→2.
+This atomic query prevents race conditions where two concurrent requests both increment from 0 to 1 instead of 0→1→2.
 
 ---
 
-## 5. Validazione e Sanitizzazione Input
+## 5. Input Validation & Sanitization
 
-### File: `includes/authentication.php`, tutti i file `public/`
+### Files: `includes/authentication.php`, all `public/` files
 
-### Funzioni di Validazione Base
+### Core Validation Functions
 
 ```php
-// Verifica: è stringa + non vuota + lunghezza ≤ max
+// Checks: is string + non-empty + length ≤ max
 function is_nonempty_string($value, int $max_length = 255): bool
 
-// Normalizza username: applica whitelist /^[A-Za-z0-9_.-]{3,32}$/, ritorna '' se invalido
+// Normalizes username: applies whitelist /^[A-Za-z0-9_.-]{3,32}$/, returns '' if invalid
 function normalize_username(string $username): string
 ```
 
 ### Whitelist vs Blacklist
 
-Il progetto usa **whitelist** (elenco di caratteri/formati **ammessi**) invece di blacklist (elenco di caratteri **vietati**):
+The project uses **whitelists** (allowed characters/formats) instead of blacklists (forbidden characters):
 
-- Username: solo `[A-Za-z0-9_.-]`
-- Path file: solo `[a-zA-Z0-9\/_.-]`
-- Extra input (titoli): `[\p{L}\p{N}\s\-_.`,!?()'"]` — lettere Unicode, numeri, punteggiatura base
+- Username: only `[A-Za-z0-9_.-]`
+- File paths: only `[a-zA-Z0-9\/_.-]`
+- Free-text input (titles): `[\p{L}\p{N}\s\-_.`,!?()'"]` — Unicode letters, numbers, basic punctuation
 
-### Prevenzione XSS Output
+### XSS Output Prevention
 
-Ogni variabile dinamica inserita nell'HTML usa:
+Every dynamic variable inserted into HTML uses:
 ```php
 htmlspecialchars($value, ENT_QUOTES, 'UTF-8')
 ```
 
-`ENT_QUOTES` converte sia `'` che `"`, prevenendo sia tag injection che attribute injection.
+`ENT_QUOTES` encodes both `'` and `"`, preventing both tag injection and attribute injection.
 
 ---
 
-## 6. Sicurezza Password
+## 6. Password Security
 
-### File: `includes/authentication.php`, `public/register.php`, `public/change_password.php`, `public/recover.php`
+### Files: `includes/authentication.php`, `public/register.php`, `public/change_password.php`, `public/recover.php`
 
-### Algoritmo di Hashing
+### Hashing Algorithm
 
-| Parametro | Valore |
-|-----------|--------|
-| Algoritmo | Argon2ID (OWASP Recommended 2024) |
+| Parameter | Value |
+|-----------|-------|
+| Algorithm | Argon2ID (OWASP Recommended 2024) |
 | `memory_cost` | 65536 (64 MB) |
-| `time_cost` | 4 iterazioni |
+| `time_cost` | 4 iterations |
 | `threads` | 1 |
 
-Argon2ID è resistente a GPU attacks (memory-hard) e side-channel attacks (combina Argon2i e Argon2d).
+Argon2ID is resistant to GPU attacks (memory-hard) and side-channel attacks (combines Argon2i and Argon2d).
 
 ### Password Strength Scoring
 
-Algoritmo server-side (in `evaluatePasswordStrength()`) indipendente dal JavaScript client-side:
+Server-side algorithm (in `evaluatePasswordStrength()`) independent from the client-side JavaScript:
 
-| Criterio | Punti |
-|---------|-------|
-| Lunghezza ≥12 | 20 |
-| Lunghezza ≥16 | +10 |
-| Lettere minuscole | 15 |
-| Lettere maiuscole | 15 |
-| Numeri | 15 |
-| Simboli | 20 |
-| Sequenze prevedibili assenti (`1234`, `qwerty`, `password`) | +5 |
+| Criterion | Points |
+|-----------|--------|
+| Length ≥12 | 20 |
+| Length ≥16 | +10 |
+| Lowercase letters | 15 |
+| Uppercase letters | 15 |
+| Numbers | 15 |
+| Symbols | 20 |
+| No predictable sequences (`1234`, `qwerty`, `password`) | +5 |
 
-Per registrarsi o resettare la password: **score 100/100 + tutte le categorie presenti**.
+To register or reset a password: **score 100/100 + all categories must be present**.
 
-### Policy Password
+### Password Policy
 
-- Lunghezza minima: **12 caratteri**
-- Lunghezza massima: **256 caratteri** (limite anti-DoS per Argon2ID)
-- Nuova password deve essere **diversa** dalla vecchia (in change_password.php)
+- Minimum length: **12 characters**
+- Maximum length: **256 characters** (anti-DoS limit for Argon2ID)
+- New password must be **different** from the old one (in change_password.php)
 
 ---
 
-## 7. Upload Sicuro dei File
+## 7. Secure File Upload
 
 ### File: `public/upload_control.php`
 
-### Pipeline di Validazione (in ordine, senza salvare)
+### Validation Pipeline (in order, before saving anything)
 
 ```
-1. Verifica sessione + IP binding
-2. Verifica CSRF token
-3. Rate limiting (10 upload/ora per utente)
-4. Titolo: regex whitelist caratteri
+1. Session check + IP binding
+2. CSRF token verification
+3. Rate limiting (10 uploads/hour per user)
+4. Title: character whitelist regex
 5. validateFile(audio):
    a. UPLOAD_ERR_* check
-   b. Dimensione ≤ 10MB
-   c. Estensione whitelist: ['mp3']
-   d. MIME type reale (finfo magic bytes): ['audio/mpeg']
+   b. Size ≤ 10MB
+   c. Extension whitelist: ['mp3']
+   d. Real MIME type (finfo magic bytes): ['audio/mpeg']
 6. validateFile(lyrics):
    a. UPLOAD_ERR_* check
-   b. Dimensione ≤ 1MB
-   c. Estensione whitelist: ['txt']
-   d. MIME type reale: ['text/plain']
+   b. Size ≤ 1MB
+   c. Extension whitelist: ['txt']
+   d. Real MIME type: ['text/plain']
 ```
 
-**Entrambi i file vengono validati PRIMA di salvarne uno.** Se il secondo file è invalido, il primo non viene sprecato su disco.
+**Both files are fully validated BEFORE either is saved.** If the second file is invalid, the first is not wasted on disk.
 
-### Salvataggio Sicuro
+### Secure Save Process
 
 ```
 7. saveFile(audio):
-   - Nome: uniqid() + bin2hex(random_bytes(8)) → non predicibile
-   - Hash SHA-256 calcolato prima del move
-   - move_uploaded_file() (verifica is_uploaded_file internamente)
+   - Name: uniqid() + bin2hex(random_bytes(8)) → unpredictable
+   - SHA-256 hash computed before the move
+   - move_uploaded_file() (verifies is_uploaded_file() internally)
    - chmod(0644)
-8. saveFile(lyrics): stesso processo
-9. INSERT in transazione DB con rollback
-10. Se rollback: unlink() dei file fisici già salvati
+8. saveFile(lyrics): same process
+9. INSERT in DB transaction with rollback
+10. On rollback: unlink() any physical files already saved
 ```
 
-### Protezione contro Upload di File Eseguibili
+### Protection Against Executable File Upload
 
-- Estensione validata (whitelist: solo mp3 e txt)
-- MIME type reale verificato tramite magic bytes (non il `Content-Type` del browser)
-- `chmod 0644` → nessun bit di esecuzione
-- I file sono in `storage/uploads/` (non in una directory servita come web root con PHP abilitato)
+- Extension validated (whitelist: mp3 and txt only)
+- Real MIME type verified via magic bytes (not the browser's `Content-Type`)
+- `chmod 0644` → no execute bit
+- Files stored in `storage/uploads/` (not a web root directory with PHP execution enabled)
 
 ---
 
-## 8. Download Sicuro e Integrity Check
+## 8. Secure Download & Integrity Check
 
-### File: `public/download.php`, `public/view_lyrics.php`
+### Files: `public/download.php`, `public/view_lyrics.php`
 
-### Controllo Premium
+### Premium Access Control
 
 ```php
 if ($media['is_premium'] && !$currentUser['is_premium']) {
@@ -340,48 +339,48 @@ if ($media['is_premium'] && !$currentUser['is_premium']) {
 }
 ```
 
-### Integrity Check SHA-256
+### SHA-256 Integrity Check
 
-Al momento del download, il file su disco viene re-hashato e confrontato con l'hash salvato nel DB al momento dell'upload:
+At download time, the file on disk is re-hashed and compared against the hash stored in the DB at upload time:
 
 ```php
 $current_hash = hash_file('sha256', $requested_path);
 if ($current_hash !== $media['audio_hash']) {
-    // → HTTP 500 + log CRITICAL (possibile manomissione)
+    // → HTTP 500 + log CRITICAL (possible tampering)
 }
 ```
 
-### Ri-validazione MIME al Download
+### MIME Re-validation at Download
 
-Anche se il file ha passato il check all'upload, `finfo_file()` ri-verifica i magic bytes al momento del download. Blocca scenari in cui un file sia stato sostituito manualmente sul server.
+Even if the file passed the upload check, `finfo_file()` re-verifies the magic bytes at download time. This blocks scenarios where a file was manually replaced on the server.
 
-### Headers Download Sicuri
+### Secure Download Headers
 
 ```
 Content-Type: audio/mpeg
 Content-Disposition: attachment; filename="..."
-X-Content-Type-Options: nosniff   ← impedisce MIME sniffing del browser
+X-Content-Type-Options: nosniff   ← prevents browser MIME sniffing
 Cache-Control: no-cache
 ```
 
-Il filename nel `Content-Disposition` è sanitizzato con `preg_replace` per prevenire header injection.
+The filename in `Content-Disposition` is sanitized with `preg_replace` to prevent header injection.
 
 ---
 
-## 9. Protezione Path Traversal
+## 9. Path Traversal Protection
 
-### Applicato in: `download.php`, `view_lyrics.php`, `admin.php` (delete media)
+### Applied in: `download.php`, `view_lyrics.php`, `admin.php` (delete media)
 
-### Doppio Check
+### Double Check
 
-**CHECK A — Regex sul path dal DB:**
+**CHECK A — Regex on the DB path:**
 ```php
 if (strpos($path, '..') !== false || preg_match('/[^a-zA-Z0-9\/_.-]/', $path)) {
     // → 400 Bad Request + log
 }
 ```
 
-**CHECK B — Canonical path con `realpath()`:**
+**CHECK B — Canonical path with `realpath()`:**
 ```php
 $storage_dir    = realpath(__DIR__ . '/../storage');
 $requested_path = realpath($storage_dir . '/' . $path);
@@ -391,12 +390,12 @@ if (!$requested_path || strpos($requested_path, $storage_dir) !== 0) {
 }
 ```
 
-`realpath()` risolve simlink e sequenze `../`. Anche se un path manomesso sopravvivesse al CHECK A, `strpos($resolved, $storage_dir) !== 0` lo bloccherebbe.
+`realpath()` resolves symlinks and `../` sequences. Even if a tampered path survived CHECK A, `strpos($resolved, $storage_dir) !== 0` would block it.
 
-**Esempio:**
+**Example:**
 - Input: `audio/../../etc/passwd`
-- Dopo `realpath()`: `/etc/passwd`
-- `strpos('/etc/passwd', '/var/www/storage')` → `false` → BLOCCATO
+- After `realpath()`: `/etc/passwd`
+- `strpos('/etc/passwd', '/var/www/storage')` → `false` → BLOCKED
 
 ---
 
@@ -404,220 +403,220 @@ if (!$requested_path || strpos($requested_path, $storage_dir) !== 0) {
 
 ### File: `includes/authentication.php` → `set_security_headers()`
 
-| Header | Valore | Protezione |
-|--------|--------|-----------|
+| Header | Value | Protection |
+|--------|-------|------------|
 | `Content-Security-Policy` | `default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'` | XSS via script injection |
 | `X-Frame-Options` | `DENY` | Clickjacking |
 | `X-Content-Type-Options` | `nosniff` | MIME sniffing |
-| `Referrer-Policy` | `strict-origin-when-cross-origin` | Leak URL sensibili via Referer |
-| `Strict-Transport-Security` | `max-age=31536000; includeSubDomains` | Downgrade HTTPS → HTTP |
-| `X-XSS-Protection` | `1; mode=block` | XSS legacy (browser datati) |
-| `Permissions-Policy` | `geolocation=(), microphone=(), camera=()` | Feature policy |
+| `Referrer-Policy` | `strict-origin-when-cross-origin` | Sensitive URL leakage via Referer |
+| `Strict-Transport-Security` | `max-age=31536000; includeSubDomains` | HTTPS downgrade attacks |
+| `X-XSS-Protection` | `1; mode=block` | XSS in legacy browsers |
+| `Permissions-Policy` | `geolocation=(), microphone=(), camera=()` | Browser feature policy |
 
 ---
 
-## 11. Sicurezza Database
+## 11. Database Security
 
 ### File: `includes/db.php`
 
-### Configurazione PDO
+### PDO Configuration
 
-| Opzione | Valore | Motivazione |
-|---------|--------|------------|
-| `ATTR_EMULATE_PREPARES` | `false` | Prepared statements nativi del driver (non emulati): separazione strutturale query/dati |
-| `ERRMODE` | `EXCEPTION` | Errori DB → eccezioni PHP (nessun silent failure) |
-| `DEFAULT_FETCH_MODE` | `ASSOC` | Array associativi (no indici numerici opachi) |
-| `ATTR_PERSISTENT` | `false` | No connessioni persistenti (evita stato ereditato) |
-| SQL `SET NAMES utf8mb4` | — | Charset esplicito nel handshake |
-| SQL mode | `STRICT_ALL_TABLES` | Rifiuta valori invalidi (no troncamento silenzioso) |
+| Option | Value | Rationale |
+|--------|-------|-----------|
+| `ATTR_EMULATE_PREPARES` | `false` | Native driver prepared statements (not emulated): structural query/data separation |
+| `ERRMODE` | `EXCEPTION` | DB errors → PHP exceptions (no silent failures) |
+| `DEFAULT_FETCH_MODE` | `ASSOC` | Associative arrays (no opaque numeric indexes) |
+| `ATTR_PERSISTENT` | `false` | No persistent connections (avoids inherited state) |
+| SQL `SET NAMES utf8mb4` | — | Explicit charset in handshake |
+| SQL mode | `STRICT_ALL_TABLES` | Rejects invalid values (no silent truncation) |
 
-### Protezione da SQL Injection
+### SQL Injection Protection
 
-**100% prepared statements.** Nessuna query usa concatenazione di stringhe con input utente. Esempio:
+**100% prepared statements.** No query uses string concatenation with user input. Example:
 
 ```php
-// ✓ Sicuro
+// ✓ Safe
 $stmt = $pdo->prepare("SELECT id FROM users WHERE username = ?");
 $stmt->execute([$username]);
 
-// ✗ MAI usato nel codebase
+// ✗ NEVER used in this codebase
 $pdo->query("SELECT id FROM users WHERE username = '$username'");
 ```
 
-### Credenziali DB
+### DB Credentials
 
-Nessuna credenziale hardcoded. Tutte lette da variabili d'ambiente Docker:
+No hardcoded credentials. All read from Docker environment variables:
 ```php
-getenv('MYSQL_HOST')     // Host database
-getenv('MYSQL_USER')     // Utente DB
-getenv('MYSQL_PASSWORD') // Password DB
-getenv('MYSQL_DATABASE') // Nome database
+getenv('MYSQL_HOST')     // Database host
+getenv('MYSQL_USER')     // DB user
+getenv('MYSQL_PASSWORD') // DB password
+getenv('MYSQL_DATABASE') // Database name
 ```
 
 ---
 
-## 12. Logging e Audit Trail
+## 12. Logging & Audit Trail
 
 ### File: `includes/SecurityLogger.php`
 
-### Architettura Dual-Channel
+### Dual-Channel Architecture
 
-| Canale | Condizione | Formato | Posizione |
-|--------|-----------|---------|----------|
-| File | Sempre | JSON one-line | `storage/logs/security.log` |
-| Database | Solo WARNING e CRITICAL | Record SQL | Tabella `security_logs` |
+| Channel | Condition | Format | Location |
+|---------|-----------|--------|----------|
+| File | Always | JSON one-line | `storage/logs/security.log` |
+| Database | WARNING and CRITICAL only | SQL record | Table `security_logs` |
 
-**Rationale dual-channel:**
-- Il file log persiste anche se il DB è down o corrotto
-- Il DB permette query analitiche e alerting (es. "tutti i WARNING dell'ultimo giorno")
+**Rationale:**
+- The file persists even if the DB is down or corrupted
+- The DB allows analytical queries and alerting (e.g. "all WARNINGs from the last 24h")
 
-### Livelli Log
+### Log Levels
 
-| Livello | Quando |
-|---------|--------|
-| `INFO` | Login riuscito, download completato, view lyrics |
-| `WARNING` | Login fallito, CSRF violation, rate limit superato, ban attempt, missing premium |
-| `CRITICAL` | Integrity check fallito, path traversal rilevato |
+| Level | When |
+|-------|------|
+| `INFO` | Successful login, completed download, lyrics view |
+| `WARNING` | Failed login, CSRF violation, rate limit exceeded, ban attempt, missing premium |
+| `CRITICAL` | Integrity check failed, path traversal detected |
 
-### Rotazione Log Automatica
+### Automatic Log Rotation
 
-Quando `security.log` supera **10MB**, viene rinominato in `security.log.old` (backup) e si ricomincia con un file vuoto. Gestito da `SecurityLogger::rotateLogs()`.
+When `security.log` exceeds **10MB**, it is renamed to `security.log.old` and a new empty file is created. Managed by `SecurityLogger::rotateLogs()`.
 
-### Dati Loggati
+### Logged Data
 
-Ogni evento contiene: timestamp, livello, tipo evento, user identifier, indirizzo IP, User-Agent, dati contestuali (es. `username_attempted`, `file_id`, hash atteso vs hash trovato).
+Each event contains: timestamp, level, event type, user identifier, IP address, User-Agent, contextual data (e.g. `username_attempted`, `file_id`, expected hash vs found hash).
 
-**Token CSRF nei log:** Vengono troncati a 16 caratteri per utilità forense senza esporre il token intero.
+**CSRF tokens in logs:** Truncated to 16 characters for forensic utility without exposing the full token.
 
 ---
 
-## 13. Recovery Password
+## 13. Password Recovery
 
 ### File: `public/recover.php`
 
-### Flusso a 3 Fasi
+### 3-Phase Flow
 
 ```
-FASE A: POST {identifier}
-  → Rate limit: 3 richieste/giorno per IP
-  → Genera token: bin2hex(random_bytes(32)) = 64 hex char = 256 bit
-  → Salva nel DB: hash('sha256', $token) — MAI il token in chiaro
-  → Scadenza: 30 minuti
-  → Invia email con URL di reset (PHPMailer)
-  → Risposta IDENTICA se utente esiste o no (anti-enumeration)
+PHASE A: POST {identifier}
+  → Rate limit: 3 requests/day per IP
+  → Generate token: bin2hex(random_bytes(32)) = 64 hex chars = 256 bits
+  → Store in DB: hash('sha256', $token) — NEVER the plaintext token
+  → Expiry: 30 minutes
+  → Send email with reset URL (PHPMailer)
+  → IDENTICAL response whether user exists or not (anti-enumeration)
 
-FASE B: GET ?token=...
-  → Valida formato: /^[a-f0-9]{64}$/
-  → Recupera hash SHA-256 del token dal DB
-  → Verifica: non scaduto (expires_at > NOW()) + non usato (used_at IS NULL)
-  → Genera CSRF separato per il form di reset
+PHASE B: GET ?token=...
+  → Validate format: /^[a-f0-9]{64}$/
+  → Retrieve SHA-256 hash of the token from DB
+  → Verify: not expired (expires_at > NOW()) + not used (used_at IS NULL)
+  → Generate separate CSRF token for the reset form
 
-FASE C: POST {token} + {new_password}
-  → CSRF check (token separato per questa fase)
-  → BEGIN TRANSACTION + SELECT ... FOR UPDATE (previene race condition)
-  → Ri-verifica token (doppio check per atomicità)
-  → Validazione strength nuova password (score 100/100)
+PHASE C: POST {token} + {new_password}
+  → CSRF check (separate token for this phase)
+  → BEGIN TRANSACTION + SELECT ... FOR UPDATE (prevents race condition)
+  → Re-verify token (double check for atomicity)
+  → New password strength validation (score 100/100)
   → UPDATE users SET password_hash = ?
   → UPDATE password_resets SET used_at = NOW() (one-time use)
   → COMMIT
 ```
 
-### Sicurezza Token
+### Token Security
 
-| Proprietà | Implementazione |
-|-----------|----------------|
-| Entropia | 256 bit (random_bytes) |
-| Archiviazione | SHA-256 del token (non plaintext) |
-| One-time | `used_at` settato dopo l'uso |
-| Scadenza | 30 minuti |
-| Anti Race | `SELECT ... FOR UPDATE` in transazione |
+| Property | Implementation |
+|----------|---------------|
+| Entropy | 256 bits (random_bytes) |
+| Storage | SHA-256 hash of the token (not plaintext) |
+| One-time use | `used_at` set after use |
+| Expiry | 30 minutes |
+| Anti-race | `SELECT ... FOR UPDATE` inside transaction |
 
 ---
 
-## 14. Pannello Admin
+## 14. Admin Panel
 
 ### File: `public/admin.php`
 
-### Controlli di Accesso
+### Access Controls
 
-1. **Verifica `is_admin=1` in sessione**
-2. **IP binding** — stessa verifica degli altri file protetti
-3. **Rilettura `is_admin` dal DB ad ogni richiesta** — un admin degradato viene espulso subito
+1. **Verify `is_admin=1` in session**
+2. **IP binding** — same check as all other protected files
+3. **Re-read `is_admin` from DB on every request** — a demoted admin is evicted immediately
 
-### Protezioni Azioni Privilegiate
+### Privileged Action Protections
 
-| Azione | Protezione aggiuntiva |
+| Action | Additional Protection |
 |--------|----------------------|
-| `toggle_ban` | Blocca auto-ban + ban di altri admin |
-| `toggle_admin` | Blocca auto-demotion |
-| `delete_user` | Cancella prima i file fisici (con path traversal check), poi il record DB |
-| `delete_media` | `realpath()` + `strpos()` prima di `unlink()` |
-| `unblock_user` | `action_type` validato contro whitelist degli action type esistenti |
+| `toggle_ban` | Blocks self-ban + banning other admins |
+| `toggle_admin` | Blocks self-demotion |
+| `delete_user` | Deletes physical files first (with path traversal check), then DB record |
+| `delete_media` | `realpath()` + `strpos()` before `unlink()` |
+| `unblock_user` | `action_type` validated against whitelist of existing action types |
 
-### CSRF Admin Separato
+### Separate Admin CSRF
 
-Ogni form admin include un token `admin_csrf_token` generato separatamente. Non è riutilizzabile in contesti utente normale (separazione privilegi).
+Every admin form includes an `admin_csrf_token` generated independently. It cannot be reused in normal user contexts (privilege separation).
 
 ---
 
-## 15. Manutenzione e Cleanup Automatico
+## 15. Maintenance & Automatic Cleanup
 
 ### File: `includes/maintenance.php`
 
-**Strategia:** 1% di probabilità per ogni richiesta HTTP (`rand(1,100) === 1`) → nessun cron job richiesto.
+**Strategy:** 1% probability per HTTP request (`rand(1,100) === 1`) → no cron job required.
 
-| Operazione | Soglia |
-|-----------|--------|
-| Pulizia rate_limits scaduti | > finestra dell'action type |
-| Pulizia password_resets usati/scaduti | > 7 giorni |
-| Rotazione security.log | > 10MB |
-| Pulizia security_logs DB | > 90 giorni |
-
----
-
-## 16. Configurazione Ambiente (Docker)
-
-### File: `Dockerfile`, `docker-compose.yml`
-
-- **Credenziali DB:** Solo via variabili d'ambiente Docker (`MYSQL_*`)
-- **Nessuna credenziale in VCS:** `.env` non committato; `.gitignore` esclude `.env`, `vendor/` e tutti i file di upload e log
-- **MailHog:** Mail server locale per lo sviluppo; in produzione sostituire con SMTP reale via env vars `MAIL_HOST`, `MAIL_PORT`, `MAIL_USER`, `MAIL_PASS`
-- **`APP_ENV`:** `development` abilita log di debug aggiuntivi; in produzione impostare a `production`
+| Operation | Threshold |
+|-----------|-----------|
+| Clean expired rate_limits | > action type window |
+| Clean used/expired password_resets | > 7 days |
+| Rotate security.log | > 10MB |
+| Clean security_logs DB records | > 90 days |
 
 ---
 
-## 17. Matrice delle Vulnerabilità Coperte
+## 16. Environment Configuration (Docker)
 
-| Vulnerabilità (OWASP Top 10) | Mitigazione implementata |
-|------------------------------|--------------------------|
-| **A01 — Broken Access Control** | validate_session() + IP binding + is_admin check real-time + premium check |
-| **A02 — Cryptographic Failures** | Argon2ID con parametri OWASP, SHA-256 per integrity, random_bytes(32) per token, HTTPS-only cookies |
-| **A03 — Injection (SQL)** | 100% prepared statements PDO, ATTR_EMULATE_PREPARES=false |
-| **A03 — Injection (XSS)** | htmlspecialchars(ENT_QUOTES) su tutto l'output, CSP header |
-| **A04 — Insecure Design** | Separazione form/controller, dual-channel logging, fail-secure, double check path traversal |
-| **A05 — Security Misconfiguration** | Security headers completi, strict_types, STRICT_ALL_TABLES, no credenziali hardcoded |
-| **A06 — Vulnerable Components** | Dipendenze via Composer (PHPMailer), aggiornabili autonomamente |
-| **A07 — Auth Failures** | Rate limiting dual-layer, session fixation prevention, timing attack prevention, ban check real-time |
-| **A08 — Software Integrity** | SHA-256 hash_file su upload + verify al download, move_uploaded_file |
-| **A09 — Logging Failures** | Dual-channel logging (file + DB), rotazione automatica, CRITICAL per integrity violations |
-| **A10 — SSRF** | Nessuna richiesta HTTP outbound dall'applicazione (eccetto PHPMailer a MailHog/SMTP locale) |
+### Files: `Dockerfile`, `docker-compose.yml`
 
-### Ulteriori Vulnerabilità Coperte
+- **DB credentials:** Only via Docker environment variables (`MYSQL_*`)
+- **No credentials in VCS:** `.env` is not committed; `.gitignore` excludes `.env`, `vendor/`, all upload files and logs
+- **MailHog:** Local mail server for development; in production replace with real SMTP via env vars `MAIL_HOST`, `MAIL_PORT`, `MAIL_USER`, `MAIL_PASS`
+- **`APP_ENV`:** `development` enables additional debug logs; set to `production` for live deployments
 
-| Vulnerabilità | Mitigazione |
+---
+
+## 17. Vulnerability Coverage Matrix
+
+| Vulnerability (OWASP Top 10) | Mitigation |
+|------------------------------|------------|
+| **A01 — Broken Access Control** | `validate_session()` + IP binding + real-time `is_admin` check + premium check |
+| **A02 — Cryptographic Failures** | Argon2ID with OWASP parameters, SHA-256 for integrity, `random_bytes(32)` for tokens, HTTPS-only cookies |
+| **A03 — Injection (SQL)** | 100% PDO prepared statements, `ATTR_EMULATE_PREPARES=false` |
+| **A03 — Injection (XSS)** | `htmlspecialchars(ENT_QUOTES)` on all output, CSP header |
+| **A04 — Insecure Design** | Form/controller separation, dual-channel logging, fail-secure, double path traversal check |
+| **A05 — Security Misconfiguration** | Full security headers, `strict_types`, `STRICT_ALL_TABLES`, no hardcoded credentials |
+| **A06 — Vulnerable Components** | Dependencies via Composer (PHPMailer), independently updatable |
+| **A07 — Auth Failures** | Dual-layer rate limiting, session fixation prevention, timing attack prevention, real-time ban check |
+| **A08 — Software Integrity** | SHA-256 `hash_file` on upload + verification at download, `move_uploaded_file` |
+| **A09 — Logging Failures** | Dual-channel logging (file + DB), automatic rotation, CRITICAL for integrity violations |
+| **A10 — SSRF** | No outbound HTTP requests from the application (except PHPMailer to MailHog/local SMTP) |
+
+### Additional Vulnerabilities Covered
+
+| Vulnerability | Mitigation |
 |---------------|------------|
-| **CSRF** | Token 256-bit + hash_equals() timing-safe, SameSite=Lax cookie |
-| **Session Hijacking** | IP binding + session_regenerate_id(true) al login |
-| **Session Fixation** | session_regenerate_id(true) + delete old session |
+| **CSRF** | 256-bit token + `hash_equals()` timing-safe, `SameSite=Lax` cookie |
+| **Session Hijacking** | IP binding + `session_regenerate_id(true)` on login |
+| **Session Fixation** | `session_regenerate_id(true)` + delete old session |
 | **Brute Force** | Rate limiting 5/15min per username + 5/15min per IP |
-| **User Enumeration** | Risposta identica per username inesistente/password sbagliata (login e reset) |
-| **Path Traversal** | Double check: regex whitelist + realpath() boundary |
-| **File Upload Bypass** | MIME magic bytes check (finfo) indipendente dall'estensione |
-| **Malicious File Execution** | chmod 0644, estensione e MIME in whitelist, storage fuori da PHP-exec path |
-| **Account Takeover via Reset** | Token one-time + scadenza 30min + archiviazione come hash SHA-256 |
-| **Privilege Escalation** | is_admin ricaricato dal DB ad ogni richiesta admin, ban check real-time |
-| **Clickjacking** | X-Frame-Options: DENY |
-| **MIME Sniffing** | X-Content-Type-Options: nosniff |
-| **Cache Poisoning** | Cache-Control: no-store su contenuti autenticati/premium |
-| **DoS via Hashing** | Max 256 char per password (limite Argon2ID cost) |
-| **Race Condition Reset** | SELECT ... FOR UPDATE in transazione per token reset |
+| **User Enumeration** | Identical response for non-existent username / wrong password (login and reset) |
+| **Path Traversal** | Double check: regex whitelist + `realpath()` boundary |
+| **File Upload Bypass** | MIME magic bytes check (`finfo`) independent from extension |
+| **Malicious File Execution** | `chmod 0644`, extension and MIME in whitelist, storage outside PHP-exec path |
+| **Account Takeover via Reset** | One-time token + 30min expiry + stored as SHA-256 hash |
+| **Privilege Escalation** | `is_admin` reloaded from DB on every admin request, real-time ban check |
+| **Clickjacking** | `X-Frame-Options: DENY` |
+| **MIME Sniffing** | `X-Content-Type-Options: nosniff` |
+| **Cache Poisoning** | `Cache-Control: no-store` on authenticated/premium content |
+| **DoS via Hashing** | Max 256 chars per password (Argon2ID cost limit) |
+| **Race Condition Reset** | `SELECT ... FOR UPDATE` in transaction for reset token |
